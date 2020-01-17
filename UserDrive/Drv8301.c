@@ -1,0 +1,102 @@
+#include "Drv8301.h"
+#include "GPIO.h"
+#include "Delay.h"
+extern u16 SPI1_RxData[DRV8301RS_MSG_NUM];
+const u16 SPI1_TxData[DRV8301RS_MSG_NUM] =
+{
+
+	DRV8301_SPI_DATA_FORMATTER(DRV8301_CMD_READ,DRV8301_ADDR_STATUS_REGISTER_1,0x00),
+	DRV8301_SPI_DATA_FORMATTER(DRV8301_CMD_READ,DRV8301_ADDR_STATUS_REGISTER_2,0x00),
+	DRV8301_SPI_DATA_FORMATTER(DRV8301_CMD_READ,DRV8301_ADDR_CONTROL_REGISTER_1,0x00),
+	DRV8301_SPI_DATA_FORMATTER(DRV8301_CMD_READ,DRV8301_ADDR_CONTROL_REGISTER_2,0x00),
+	DRV8301_SPI_DATA_FORMATTER(DRV8301_CMD_WRITE, DRV8301_ADDR_CONTROL_REGISTER_1, \
+					DRV8301_SPI_CONTROL_REGISTER_1_DATA(DRV8301_VdsLevel_0p282_V, \
+														DRV8301_OcMode_CurrentLimit, \
+														DRV8301_PwmMode_Six_Inputs, \
+														DRV8301_Reset_Normal, \
+														DRV8301_PeakCurrent_1p70_A)),
+	DRV8301_SPI_DATA_FORMATTER(DRV8301_CMD_READ, DRV8301_ADDR_CONTROL_REGISTER_1, 0x00),
+	DRV8301_SPI_DATA_FORMATTER(DRV8301_CMD_WRITE, DRV8301_ADDR_CONTROL_REGISTER_2, \
+					DRV8301_SPI_CONTROL_REGISTER_2_DATA(DRV8301_OcOffTimeMode_Normal, \
+														DRV8301_DcCalMode_Ch2_NoLoad, \
+														DRV8301_DcCalMode_Ch1_Load, \
+														DRV8301_ShuntAmpGain_20VpV, \
+														DRV8301_OcTwMode_Both )),
+	DRV8301_SPI_DATA_FORMATTER(DRV8301_CMD_READ, DRV8301_ADDR_CONTROL_REGISTER_2, 0x00),
+	DRV8301_SPI_DATA_FORMATTER(DRV8301_CMD_READ, DRV8301_ADDR_CONTROL_REGISTER_2, 0x00)
+};//电流保护，锁存，不断开MOS DRV8301_VdsLevel_0p317_V / 4.7mr = 67A，115°保护
+
+
+u16 GateDriverConf(void)
+{
+	u8 retry=0;	
+	int j;
+	/* Enable 8301*/
+	GPIO_SetBits(DRV8301_EN_GPIO_PORT, DRV8301_EN_PIN);
+	delay_ms(5);
+	for (int i = 0; i < DRV8301RS_MSG_NUM; i++)
+	{
+		GPIO_ResetBits(DRV8301_CS_PORT, DRV8301_CS_PIN);//片选
+		while (SPI_I2S_GetFlagStatus(SPI1, SPI_I2S_FLAG_TXE) == RESET)
+		{
+			retry++;
+			if(retry>200)return 0;
+		}
+		retry=0;
+		SPI_I2S_SendData(SPI1,SPI1_TxData[i]);
+		while (SPI_I2S_GetFlagStatus(SPI1, SPI_I2S_FLAG_RXNE) == RESET)
+		{
+			retry++;
+			if(retry>200)return 0;
+		}
+		retry = 0;
+		if(i==0)
+			j = 8;
+		else 
+			j = i-1;
+		SPI1_RxData[j] = SPI_I2S_ReceiveData(SPI1);
+		GPIO_SetBits(DRV8301_CS_PORT, DRV8301_CS_PIN);//取消片选
+		delay_ms(1);
+	}
+	return 1;
+}
+
+
+u16 Read8301[4] = {1};
+u16 Send8301[4] = {	DRV8301_SPI_DATA_FORMATTER(DRV8301_CMD_READ,DRV8301_ADDR_CONTROL_REGISTER_1,0x00),
+					DRV8301_SPI_DATA_FORMATTER(DRV8301_CMD_READ,DRV8301_ADDR_CONTROL_REGISTER_2,0x00),
+					DRV8301_SPI_DATA_FORMATTER(DRV8301_CMD_READ,DRV8301_ADDR_STATUS_REGISTER_1,0x00),
+					DRV8301_SPI_DATA_FORMATTER(DRV8301_CMD_READ,DRV8301_ADDR_STATUS_REGISTER_2,0x00)};
+u16 GateDriverRead(void)
+{
+	u8 retry=0;	
+	int j;
+	/* Enable 8301*/
+	GPIO_SetBits(MDBT40_CS_PORT, DRV8301_CS_PIN);
+	GPIO_SetBits(DRV8301_EN_GPIO_PORT, MDBT40_CS_PIN);
+	for (int i = 0; i < 4; i++)
+	{
+		GPIO_ResetBits(DRV8301_CS_PORT, DRV8301_CS_PIN);//片选
+		while (SPI_I2S_GetFlagStatus(SPI1, SPI_I2S_FLAG_TXE) == RESET)
+		{
+			retry++;
+			if(retry>200)return 0;
+		}
+		retry=0;
+		SPI_I2S_SendData(SPI1,Send8301[i]);
+		while (SPI_I2S_GetFlagStatus(SPI1, SPI_I2S_FLAG_RXNE) == RESET)
+		{
+			retry++;
+			if(retry>200)return 0;
+		}
+		retry = 0;
+		if(i==0)
+			j = 3;
+		else 
+			j = i-1;
+		Read8301[j] = SPI_I2S_ReceiveData(SPI1);
+		GPIO_SetBits(DRV8301_CS_PORT, DRV8301_CS_PIN);//取消片选
+	}
+	return 1;
+}
+
